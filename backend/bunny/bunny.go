@@ -5,9 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
-	"net/http/httputil"
 	"path"
 	"path/filepath"
 	"strings"
@@ -149,7 +147,6 @@ func (f *Fs) Features() *fs.Features {
 // ErrorIsDir if possible without doing any extra work,
 // otherwise ErrorObjectNotFound.
 func (f *Fs) NewObject(ctx context.Context, remote string) (fs.Object, error) {
-	log.Print("Object Path: ", remote)
 	if remote == "" {
 		return nil, errors.New("unable to get object for root dir")
 	}
@@ -161,7 +158,6 @@ func (f *Fs) NewObject(ctx context.Context, remote string) (fs.Object, error) {
 	}
 	for _, entry := range list.Files(f) {
 		entryName := path.Base(entry.Remote())
-		log.Print("Checking File ", entry.Remote())
 		if entryName == filename {
 			return entry, nil
 		}
@@ -223,8 +219,8 @@ func (f *Fs) Put(ctx context.Context, in io.Reader, src fs.ObjectInfo, options .
 	if err != nil {
 		return nil, err
 	}
-	f.cache.Delete(filepath.Dir(src.Remote()))
-	// f.
+	f.clearDirCache(filepath.Dir(src.Remote()))
+
 	if resp == nil {
 		return nil, errors.New("no response returned (put)")
 	}
@@ -376,7 +372,6 @@ func (o *Object) Open(ctx context.Context, options ...fs.OpenOption) (in io.Read
 	var req *http.Request
 
 	reqUrl := o.fs.getFullFilePath(o.remote, true)
-	log.Print("Open: ", reqUrl)
 	req, err = http.NewRequestWithContext(ctx, http.MethodGet, reqUrl, nil)
 	for k, v := range fs.OpenOptionHeaders(options) {
 		req.Header.Add(k, v)
@@ -432,8 +427,7 @@ func (o *Object) Update(ctx context.Context, in io.Reader, src fs.ObjectInfo, op
 		}
 		return shouldRetry(ctx, resp, err)
 	})
-
-	o.fs.cache.Delete(filepath.Dir(src.Remote()))
+	o.fs.clearDirCache(filepath.Dir(src.Remote()))
 	return err
 
 }
@@ -448,10 +442,6 @@ func (o *Object) Remove(ctx context.Context) (err error) {
 	if err != nil {
 		return err
 	}
-	s, err := httputil.DumpRequest(req, false)
-	if err == nil {
-		log.Print(string(s))
-	}
 	err = o.fs.pacer.Call(func() (bool, error) {
 		resp, err = o.fs.httpClient.Do(req)
 		return shouldRetry(ctx, resp, err)
@@ -459,7 +449,7 @@ func (o *Object) Remove(ctx context.Context) (err error) {
 	if err != nil {
 		return err
 	}
-	o.fs.cache.Delete(filepath.Dir(o.Remote()))
+	o.fs.clearDirCache(filepath.Dir(o.Remote()))
 	if resp.StatusCode != 200 {
 		return errors.New("Failed to delete file: " + o.remote)
 	}
