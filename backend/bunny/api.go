@@ -50,6 +50,13 @@ func (i *DirItem) FullPath(d *DirList) string {
 	}
 }
 
+func (f *Fs) clearDirCache(dir string) {
+	if dir == "." {
+		dir = ""
+	}
+	f.cache.Delete(dir)
+}
+
 // Retrieve a directory listing form bunny and store in cache
 func (f *Fs) list(ctx context.Context, dir string) (list *DirList, err error) {
 	value, found := f.cache.GetMaybe(dir)
