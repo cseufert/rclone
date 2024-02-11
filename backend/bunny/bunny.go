@@ -212,6 +212,8 @@ func (f *Fs) Put(ctx context.Context, in io.Reader, src fs.ObjectInfo, options .
 	err = f.pacer.Call(func() (bool, error) {
 		resp, err = f.httpClient.Do(req)
 		if err == nil && resp.StatusCode != 201 {
+			io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
 			return false, errors.New("unable to upload file (status: " + fmt.Sprintf("%0.2d", resp.StatusCode) + ")")
 		}
 		return shouldRetry(ctx, resp, err)
@@ -292,7 +294,7 @@ func (f *Fs) Hashes() hash.Set {
 
 // Precision of the remote
 func (f *Fs) Precision() time.Duration {
-	return time.Millisecond
+	return fs.ModTimeNotSupported
 }
 
 // String converts this Fs to a string
@@ -302,6 +304,8 @@ func (f *Fs) String() string {
 
 func shouldRetry(ctx context.Context, resp *http.Response, err error) (bool, error) {
 	if resp != nil && resp.StatusCode == 429 {
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
 		return true, pacer.RetryAfterError(err, time.Duration(5*time.Second))
 	}
 	return false, err
@@ -390,6 +394,8 @@ func (o *Object) Open(ctx context.Context, options ...fs.OpenOption) (in io.Read
 	if resp.StatusCode == 200 {
 		return resp.Body, nil
 	}
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
 	return nil, errors.New("file not found")
 
 }
@@ -423,6 +429,8 @@ func (o *Object) Update(ctx context.Context, in io.Reader, src fs.ObjectInfo, op
 	err = o.fs.pacer.Call(func() (bool, error) {
 		resp, err = o.fs.httpClient.Do(req)
 		if err == nil && resp.StatusCode != 201 {
+			io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
 			return true, errors.New("File not uploaded (Status: " + fmt.Sprintf("%d", resp.StatusCode) + ")")
 		}
 		return shouldRetry(ctx, resp, err)
