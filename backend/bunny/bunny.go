@@ -1,6 +1,7 @@
 package bunny
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -147,9 +148,9 @@ func (f *Fs) Features() *fs.Features {
 // ErrorIsDir if possible without doing any extra work,
 // otherwise ErrorObjectNotFound.
 func (f *Fs) NewObject(ctx context.Context, remote string) (fs.Object, error) {
-	if remote == "" {
-		return nil, errors.New("unable to get object for root dir")
-	}
+	// if remote == "" {
+	// return nil, errors.New("unable to get object for root dir")
+	// }
 	filename := path.Base(remote)
 	list, err := f.list(ctx, remote)
 
@@ -245,6 +246,33 @@ func (f *Fs) Put(ctx context.Context, in io.Reader, src fs.ObjectInfo, options .
 // The bunny.net storage zone will auto-create directories based on
 // the file upload path
 func (f *Fs) Mkdir(ctx context.Context, dir string) error {
+	if dir == "" {
+		return nil
+	}
+	if !strings.HasSuffix(dir, "/") {
+		dir = dir + "/"
+	}
+
+	var resp *http.Response
+	var req *http.Request
+	body := bytes.NewBufferString("{}")
+	req, err := f.newRequest(ctx, "PUT", dir, body, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Add("Content-Type", "application/json")
+
+	err = f.pacer.Call(func() (bool, error) {
+		resp, err = f.httpClient.Do(req)
+		return shouldRetry(ctx, resp, err)
+	})
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode != 201 {
+		return errors.New("unable to create directory")
+	}
+	io.Copy(io.Discard, resp.Body)
 	return nil
 }
 
@@ -269,6 +297,9 @@ func (f *Fs) Rmdir(ctx context.Context, dir string) (err error) {
 	}
 	if resp == nil {
 		return errors.New("no response returned (delete)")
+	}
+	if resp.StatusCode == 404 {
+		return fs.ErrorDirNotFound
 	}
 	if resp.StatusCode != 200 {
 		return errors.New("unable to delete dir, status code:" + fmt.Sprintf("%d", resp.StatusCode))

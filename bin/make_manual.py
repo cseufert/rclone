@@ -32,6 +32,7 @@ docs = [
     "alias.md",
     "s3.md",
     "b2.md",
+    "bunny.md"
     "box.md",
     "cache.md",
     "chunker.md",
