@@ -211,6 +211,7 @@ func (f *Fs) Put(ctx context.Context, in io.Reader, src fs.ObjectInfo, options .
 	}
 	err = f.pacer.Call(func() (bool, error) {
 		resp, err = f.httpClient.Do(req)
+		defer resp.Body.Close()
 		if err == nil && resp.StatusCode != 201 {
 			return false, errors.New("unable to upload file (status: " + fmt.Sprintf("%0.2d", resp.StatusCode) + ")")
 		}
@@ -260,6 +261,7 @@ func (f *Fs) Rmdir(ctx context.Context, dir string) (err error) {
 
 	err = f.pacer.Call(func() (bool, error) {
 		resp, err = f.httpClient.Do(req)
+		defer resp.Body.Close()
 		return shouldRetry(ctx, resp, err)
 	})
 	if err != nil {
@@ -390,6 +392,7 @@ func (o *Object) Open(ctx context.Context, options ...fs.OpenOption) (in io.Read
 	if resp.StatusCode == 200 {
 		return resp.Body, nil
 	}
+	resp.Body.Close()
 	return nil, errors.New("file not found")
 
 }
@@ -422,6 +425,7 @@ func (o *Object) Update(ctx context.Context, in io.Reader, src fs.ObjectInfo, op
 
 	err = o.fs.pacer.Call(func() (bool, error) {
 		resp, err = o.fs.httpClient.Do(req)
+		defer resp.Body.Close()
 		if err == nil && resp.StatusCode != 201 {
 			return true, errors.New("File not uploaded (Status: " + fmt.Sprintf("%d", resp.StatusCode) + ")")
 		}
@@ -444,6 +448,7 @@ func (o *Object) Remove(ctx context.Context) (err error) {
 	}
 	err = o.fs.pacer.Call(func() (bool, error) {
 		resp, err = o.fs.httpClient.Do(req)
+		defer resp.Body.Close()
 		return shouldRetry(ctx, resp, err)
 	})
 	if err != nil {
