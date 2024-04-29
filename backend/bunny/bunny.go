@@ -292,7 +292,7 @@ func (f *Fs) Hashes() hash.Set {
 
 // Precision of the remote
 func (f *Fs) Precision() time.Duration {
-	return time.Millisecond
+	return fs.ModTimeNotSupported
 }
 
 // String converts this Fs to a string
