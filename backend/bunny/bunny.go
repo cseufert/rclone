@@ -171,7 +171,7 @@ func (f *Fs) NewObject(ctx context.Context, remote string) (fs.Object, error) {
 	return nil, fs.ErrorObjectNotFound
 }
 
-// Setup a new http client request with credentials
+// Set up a new http client request with credentials
 func (f *Fs) newRequest(ctx context.Context, method string, remote string, in io.Reader, options []fs.OpenOption) (req *http.Request, err error) {
 	url := f.getFullFilePath(remote, true)
 	if strings.HasSuffix(remote, "/") {
@@ -211,6 +211,9 @@ func (f *Fs) Put(ctx context.Context, in io.Reader, src fs.ObjectInfo, options .
 	}
 	err = f.pacer.Call(func() (bool, error) {
 		resp, err = f.httpClient.Do(req)
+		if err != nil {
+			return false, errors.New("failed to upload file")
+		}
 		defer resp.Body.Close()
 		if err == nil && resp.StatusCode != 201 {
 			return false, errors.New("unable to upload file (status: " + fmt.Sprintf("%0.2d", resp.StatusCode) + ")")
@@ -243,7 +246,7 @@ func (f *Fs) Put(ctx context.Context, in io.Reader, src fs.ObjectInfo, options .
 //
 // The bunny.net storage zone will auto-create directories based on
 // the file upload path
-func (f *Fs) Mkdir(ctx context.Context, dir string) error {
+func (f *Fs) Mkdir(_ context.Context, _ string) error {
 	return nil
 }
 
@@ -261,7 +264,9 @@ func (f *Fs) Rmdir(ctx context.Context, dir string) (err error) {
 
 	err = f.pacer.Call(func() (bool, error) {
 		resp, err = f.httpClient.Do(req)
-		defer resp.Body.Close()
+		if err == nil {
+			defer resp.Body.Close()
+		}
 		return shouldRetry(ctx, resp, err)
 	})
 	if err != nil {
@@ -302,9 +307,9 @@ func (f *Fs) String() string {
 	return fmt.Sprintf("BunnyCDN Storage Pool: %s path %s", f.opt.StorageZone, f.root)
 }
 
-func shouldRetry(ctx context.Context, resp *http.Response, err error) (bool, error) {
+func shouldRetry(_ context.Context, resp *http.Response, err error) (bool, error) {
 	if resp != nil && resp.StatusCode == 429 {
-		return true, pacer.RetryAfterError(err, time.Duration(5*time.Second))
+		return true, pacer.RetryAfterError(err, 5*time.Second)
 	}
 	return false, err
 }
@@ -344,7 +349,7 @@ func (o *Object) String() string {
 	return o.remote
 }
 
-func (o *Object) Hash(ctx context.Context, ty hash.Type) (string, error) {
+func (o *Object) Hash(_ context.Context, ty hash.Type) (string, error) {
 	if ty == hash.SHA256 {
 		return o.sha256, nil
 	}
@@ -355,7 +360,7 @@ func (o *Object) Storable() bool {
 	return true
 }
 
-func (o *Object) SetModTime(ctx context.Context, t time.Time) error {
+func (o *Object) SetModTime(_ context.Context, _ time.Time) error {
 
 	return fs.ErrorCantSetModTime
 }
@@ -375,6 +380,9 @@ func (o *Object) Open(ctx context.Context, options ...fs.OpenOption) (in io.Read
 
 	reqUrl := o.fs.getFullFilePath(o.remote, true)
 	req, err = http.NewRequestWithContext(ctx, http.MethodGet, reqUrl, nil)
+	if err != nil {
+		return nil, errors.New("unable to create new request")
+	}
 	for k, v := range fs.OpenOptionHeaders(options) {
 		req.Header.Add(k, v)
 	}
@@ -425,6 +433,9 @@ func (o *Object) Update(ctx context.Context, in io.Reader, src fs.ObjectInfo, op
 
 	err = o.fs.pacer.Call(func() (bool, error) {
 		resp, err = o.fs.httpClient.Do(req)
+		if err != nil {
+			return false, errors.Join(err, errors.New("cannot upload"))
+		}
 		defer resp.Body.Close()
 		if err == nil && resp.StatusCode != 201 {
 			return true, errors.New("File not uploaded (Status: " + fmt.Sprintf("%d", resp.StatusCode) + ")")
@@ -441,13 +452,16 @@ func (o *Object) Remove(ctx context.Context) (err error) {
 	var req *http.Request
 
 	req, err = http.NewRequestWithContext(ctx, "DELETE", o.fs.getFullFilePath(o.remote, true), nil)
-	req.Header.Add("AccessKey", o.fs.opt.Key)
-
 	if err != nil {
 		return err
 	}
+	req.Header.Add("AccessKey", o.fs.opt.Key)
+
 	err = o.fs.pacer.Call(func() (bool, error) {
 		resp, err = o.fs.httpClient.Do(req)
+		if err != nil {
+			return false, errors.Join(err, errors.New("failed to delete file"))
+		}
 		defer resp.Body.Close()
 		return shouldRetry(ctx, resp, err)
 	})

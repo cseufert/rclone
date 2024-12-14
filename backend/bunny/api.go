@@ -91,8 +91,7 @@ func (f *Fs) list(ctx context.Context, dir string) (list *DirList, err error) {
 }
 
 func (d *DirList) Dirs() fs.DirEntries {
-	list := []fs.DirEntry{}
-
+	var list []fs.DirEntry
 	for _, i := range d.items {
 		if i.IsDirectory {
 			list = append(list, fs.NewDir(i.FullPath(d), i.ModTime()))
